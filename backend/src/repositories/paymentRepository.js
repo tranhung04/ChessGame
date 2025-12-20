@@ -1,5 +1,4 @@
-const sql = require('mssql');
-const { getPool } = require('../config/database');
+const { executeQuery } = require('../config/database');
 
 /**
  * Payment Repository
@@ -20,20 +19,22 @@ class PaymentRepository {
    */
   async createPayment(paymentData) {
     try {
-      const pool = await getPool();
-      const result = await pool.request()
-        .input('userId', sql.UniqueIdentifier, paymentData.userId)
-        .input('orderId', sql.NVarChar(100), paymentData.orderId)
-        .input('packageId', sql.NVarChar(50), paymentData.packageId)
-        .input('amount', sql.Decimal(10, 2), paymentData.amount)
-        .input('currency', sql.NVarChar(10), paymentData.currency || 'VND')
-        .input('status', sql.NVarChar(20), paymentData.status || 'pending')
-        .input('paymentMethod', sql.NVarChar(50), paymentData.paymentMethod || 'vnpay')
-        .query(`
-          INSERT INTO Payments (UserId, OrderId, PackageId, Amount, Currency, Status, PaymentMethod, CreatedAt, UpdatedAt)
-          OUTPUT INSERTED.*
-          VALUES (@userId, @orderId, @packageId, @amount, @currency, @status, @paymentMethod, GETUTCDATE(), GETUTCDATE())
-        `);
+      await executeQuery(`
+        INSERT INTO Payments (UserId, OrderId, PackageId, Amount, Currency, Status, PaymentMethod, CreatedAt, UpdatedAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+      `, [
+        paymentData.userId,
+        paymentData.orderId,
+        paymentData.packageId,
+        paymentData.amount,
+        paymentData.currency || 'VND',
+        paymentData.status || 'pending',
+        paymentData.paymentMethod || 'vnpay'
+      ]);
+
+      const result = await executeQuery(`
+        SELECT * FROM Payments WHERE OrderId = ?
+      `, [paymentData.orderId]);
 
       return result.recordset[0];
     } catch (error) {
@@ -52,23 +53,21 @@ class PaymentRepository {
    */
   async updatePaymentStatus(orderId, updateData) {
     try {
-      const pool = await getPool();
       const { status, vnpayData } = updateData;
+      const completedAt = status === 'completed' ? new Date() : null;
 
-      const result = await pool.request()
-        .input('orderId', sql.NVarChar(100), orderId)
-        .input('status', sql.NVarChar(20), status)
-        .input('vnpayData', sql.NVarChar(sql.MAX), JSON.stringify(vnpayData))
-        .input('completedAt', sql.DateTime2, status === 'completed' ? new Date() : null)
-        .query(`
-          UPDATE Payments
-          SET Status = @status,
-              VnpayData = @vnpayData,
-              CompletedAt = @completedAt,
-              UpdatedAt = GETUTCDATE()
-          OUTPUT INSERTED.*
-          WHERE OrderId = @orderId
-        `);
+      await executeQuery(`
+        UPDATE Payments
+        SET Status = ?,
+            VnpayData = ?,
+            CompletedAt = ?,
+            UpdatedAt = NOW()
+        WHERE OrderId = ?
+      `, [status, JSON.stringify(vnpayData), completedAt, orderId]);
+
+      const result = await executeQuery(`
+        SELECT * FROM Payments WHERE OrderId = ?
+      `, [orderId]);
 
       return result.recordset[0];
     } catch (error) {
@@ -84,15 +83,12 @@ class PaymentRepository {
    */
   async getPaymentByOrderId(orderId) {
     try {
-      const pool = await getPool();
-      const result = await pool.request()
-        .input('orderId', sql.NVarChar(100), orderId)
-        .query(`
-          SELECT p.*, pp.Name as PackageName, pp.DurationDays, pp.ScoreBonus, pp.ReviveCount
-          FROM Payments p
-          LEFT JOIN PremiumPackages pp ON p.PackageId = pp.Id
-          WHERE p.OrderId = @orderId
-        `);
+      const result = await executeQuery(`
+        SELECT p.*, pp.Name as PackageName, pp.DurationDays, pp.ScoreBonus, pp.ReviveCount
+        FROM Payments p
+        LEFT JOIN PremiumPackages pp ON p.PackageId = pp.Id
+        WHERE p.OrderId = ?
+      `, [orderId]);
 
       return result.recordset[0] || null;
     } catch (error) {
@@ -108,15 +104,12 @@ class PaymentRepository {
    */
   async getPaymentById(paymentId) {
     try {
-      const pool = await getPool();
-      const result = await pool.request()
-        .input('paymentId', sql.UniqueIdentifier, paymentId)
-        .query(`
-          SELECT p.*, pp.Name as PackageName, pp.DurationDays, pp.ScoreBonus, pp.ReviveCount
-          FROM Payments p
-          LEFT JOIN PremiumPackages pp ON p.PackageId = pp.Id
-          WHERE p.Id = @paymentId
-        `);
+      const result = await executeQuery(`
+        SELECT p.*, pp.Name as PackageName, pp.DurationDays, pp.ScoreBonus, pp.ReviveCount
+        FROM Payments p
+        LEFT JOIN PremiumPackages pp ON p.PackageId = pp.Id
+        WHERE p.Id = ?
+      `, [paymentId]);
 
       return result.recordset[0] || null;
     } catch (error) {
@@ -139,33 +132,24 @@ class PaymentRepository {
       const limit = options.limit || 10;
       const offset = (page - 1) * limit;
 
-      const pool = await getPool();
-
       // Get total count
-      const countResult = await pool.request()
-        .input('userId', sql.UniqueIdentifier, userId)
-        .query(`
-          SELECT COUNT(*) as total
-          FROM Payments
-          WHERE UserId = @userId
-        `);
+      const countResult = await executeQuery(`
+        SELECT COUNT(*) as total
+        FROM Payments
+        WHERE UserId = ?
+      `, [userId]);
 
       const total = countResult.recordset[0].total;
 
       // Get paginated payments
-      const result = await pool.request()
-        .input('userId', sql.UniqueIdentifier, userId)
-        .input('offset', sql.Int, offset)
-        .input('limit', sql.Int, limit)
-        .query(`
-          SELECT p.*, pp.Name as PackageName, pp.DurationDays, pp.ScoreBonus
-          FROM Payments p
-          LEFT JOIN PremiumPackages pp ON p.PackageId = pp.Id
-          WHERE p.UserId = @userId
-          ORDER BY p.CreatedAt DESC
-          OFFSET @offset ROWS
-          FETCH NEXT @limit ROWS ONLY
-        `);
+      const result = await executeQuery(`
+        SELECT p.*, pp.Name as PackageName, pp.DurationDays, pp.ScoreBonus
+        FROM Payments p
+        LEFT JOIN PremiumPackages pp ON p.PackageId = pp.Id
+        WHERE p.UserId = ?
+        ORDER BY p.CreatedAt DESC
+        LIMIT ? OFFSET ?
+      `, [userId, limit, offset]);
 
       return {
         payments: result.recordset,
@@ -189,15 +173,12 @@ class PaymentRepository {
    */
   async getExpiredPendingPayments(minutes = 15) {
     try {
-      const pool = await getPool();
-      const result = await pool.request()
-        .input('minutes', sql.Int, minutes)
-        .query(`
-          SELECT *
-          FROM Payments
-          WHERE Status = 'pending'
-            AND DATEDIFF(MINUTE, CreatedAt, GETUTCDATE()) > @minutes
-        `);
+      const result = await executeQuery(`
+        SELECT *
+        FROM Payments
+        WHERE Status = 'pending'
+          AND TIMESTAMPDIFF(MINUTE, CreatedAt, NOW()) > ?
+      `, [minutes]);
 
       return result.recordset;
     } catch (error) {
@@ -213,16 +194,13 @@ class PaymentRepository {
    */
   async markExpiredPayments(minutes = 15) {
     try {
-      const pool = await getPool();
-      const result = await pool.request()
-        .input('minutes', sql.Int, minutes)
-        .query(`
-          UPDATE Payments
-          SET Status = 'expired',
-              UpdatedAt = GETUTCDATE()
-          WHERE Status = 'pending'
-            AND DATEDIFF(MINUTE, CreatedAt, GETUTCDATE()) > @minutes
-        `);
+      const result = await executeQuery(`
+        UPDATE Payments
+        SET Status = 'expired',
+            UpdatedAt = NOW()
+        WHERE Status = 'pending'
+          AND TIMESTAMPDIFF(MINUTE, CreatedAt, NOW()) > ?
+      `, [minutes]);
 
       return result.rowsAffected[0];
     } catch (error) {
@@ -238,18 +216,15 @@ class PaymentRepository {
    */
   async getUserPaymentStats(userId) {
     try {
-      const pool = await getPool();
-      const result = await pool.request()
-        .input('userId', sql.UniqueIdentifier, userId)
-        .query(`
-          SELECT 
-            COUNT(*) as totalPayments,
-            SUM(CASE WHEN Status = 'completed' THEN 1 ELSE 0 END) as completedPayments,
-            SUM(CASE WHEN Status = 'completed' THEN Amount ELSE 0 END) as totalSpent,
-            MAX(CASE WHEN Status = 'completed' THEN CreatedAt END) as lastPaymentDate
-          FROM Payments
-          WHERE UserId = @userId
-        `);
+      const result = await executeQuery(`
+        SELECT 
+          COUNT(*) as totalPayments,
+          SUM(CASE WHEN Status = 'completed' THEN 1 ELSE 0 END) as completedPayments,
+          SUM(CASE WHEN Status = 'completed' THEN Amount ELSE 0 END) as totalSpent,
+          MAX(CASE WHEN Status = 'completed' THEN CreatedAt END) as lastPaymentDate
+        FROM Payments
+        WHERE UserId = ?
+      `, [userId]);
 
       return result.recordset[0];
     } catch (error) {

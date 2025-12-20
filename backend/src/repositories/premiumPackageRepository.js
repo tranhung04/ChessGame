@@ -1,5 +1,4 @@
-const sql = require('mssql');
-const { getPool } = require('../config/database');
+const { executeQuery } = require('../config/database');
 
 /**
  * Premium Package Repository
@@ -12,25 +11,23 @@ class PremiumPackageRepository {
    */
   async getAllPackages() {
     try {
-      const pool = await getPool();
-      const result = await pool.request()
-        .query(`
-          SELECT 
-            Id,
-            Name,
-            Price,
-            Currency,
-            DurationDays,
-            ScoreBonus,
-            ReviveCount,
-            Features,
-            IsActive,
-            CreatedAt,
-            UpdatedAt
-          FROM PremiumPackages
-          WHERE IsActive = 1
-          ORDER BY Price ASC
-        `);
+      const result = await executeQuery(`
+        SELECT 
+          Id,
+          Name,
+          Price,
+          Currency,
+          DurationDays,
+          ScoreBonus,
+          ReviveCount,
+          Features,
+          IsActive,
+          CreatedAt,
+          UpdatedAt
+        FROM PremiumPackages
+        WHERE IsActive = 1
+        ORDER BY Price ASC
+      `);
       
       return result.recordset.map(pkg => ({
         id: pkg.Id,
@@ -58,25 +55,22 @@ class PremiumPackageRepository {
    */
   async getPackageById(packageId) {
     try {
-      const pool = await getPool();
-      const result = await pool.request()
-        .input('packageId', sql.NVarChar(50), packageId)
-        .query(`
-          SELECT 
-            Id,
-            Name,
-            Price,
-            Currency,
-            DurationDays,
-            ScoreBonus,
-            ReviveCount,
-            Features,
-            IsActive,
-            CreatedAt,
-            UpdatedAt
-          FROM PremiumPackages
-          WHERE Id = @packageId
-        `);
+      const result = await executeQuery(`
+        SELECT 
+          Id,
+          Name,
+          Price,
+          Currency,
+          DurationDays,
+          ScoreBonus,
+          ReviveCount,
+          Features,
+          IsActive,
+          CreatedAt,
+          UpdatedAt
+        FROM PremiumPackages
+        WHERE Id = ?
+      `, [packageId]);
       
       if (result.recordset.length === 0) {
         return null;
@@ -109,14 +103,11 @@ class PremiumPackageRepository {
    */
   async isPackageActive(packageId) {
     try {
-      const pool = await getPool();
-      const result = await pool.request()
-        .input('packageId', sql.NVarChar(50), packageId)
-        .query(`
-          SELECT IsActive
-          FROM PremiumPackages
-          WHERE Id = @packageId
-        `);
+      const result = await executeQuery(`
+        SELECT IsActive
+        FROM PremiumPackages
+        WHERE Id = ?
+      `, [packageId]);
       
       if (result.recordset.length === 0) {
         return false;

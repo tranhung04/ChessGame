@@ -1,5 +1,4 @@
-const sql = require('mssql');
-const { getPool } = require('../config/database');
+const { executeQuery } = require('../config/database');
 
 /**
  * User Premium Subscription Repository
@@ -16,19 +15,18 @@ class UserPremiumSubscriptionRepository {
    */
   async createSubscription(userId, packageId, startDate, endDate) {
     try {
-      const pool = await getPool();
-      const result = await pool.request()
-        .input('userId', sql.UniqueIdentifier, userId)
-        .input('packageId', sql.NVarChar(50), packageId)
-        .input('startDate', sql.DateTime2, startDate)
-        .input('endDate', sql.DateTime2, endDate)
-        .query(`
-          INSERT INTO UserPremiumSubscriptions 
-            (UserId, PackageId, StartDate, EndDate, IsActive, RevivesUsed)
-          OUTPUT INSERTED.*
-          VALUES 
-            (@userId, @packageId, @startDate, @endDate, 1, 0)
-        `);
+      await executeQuery(`
+        INSERT INTO UserPremiumSubscriptions 
+          (UserId, PackageId, StartDate, EndDate, IsActive, RevivesUsed)
+        VALUES 
+          (?, ?, ?, ?, 1, 0)
+      `, [userId, packageId, startDate, endDate]);
+      
+      const result = await executeQuery(`
+        SELECT * FROM UserPremiumSubscriptions 
+        WHERE UserId = ? AND PackageId = ? 
+        ORDER BY CreatedAt DESC LIMIT 1
+      `, [userId, packageId]);
       
       const subscription = result.recordset[0];
       return {
@@ -55,31 +53,27 @@ class UserPremiumSubscriptionRepository {
    */
   async getActiveSubscriptionByUser(userId) {
     try {
-      const pool = await getPool();
-      const result = await pool.request()
-        .input('userId', sql.UniqueIdentifier, userId)
-        .input('currentDate', sql.DateTime2, new Date())
-        .query(`
-          SELECT 
-            ups.Id,
-            ups.UserId,
-            ups.PackageId,
-            ups.StartDate,
-            ups.EndDate,
-            ups.IsActive,
-            ups.RevivesUsed,
-            ups.CreatedAt,
-            ups.UpdatedAt,
-            pp.Name as PackageName,
-            pp.ScoreBonus,
-            pp.ReviveCount
-          FROM UserPremiumSubscriptions ups
-          INNER JOIN PremiumPackages pp ON ups.PackageId = pp.Id
-          WHERE ups.UserId = @userId
-            AND ups.IsActive = 1
-            AND ups.EndDate > @currentDate
-          ORDER BY ups.EndDate DESC
-        `);
+      const result = await executeQuery(`
+        SELECT 
+          ups.Id,
+          ups.UserId,
+          ups.PackageId,
+          ups.StartDate,
+          ups.EndDate,
+          ups.IsActive,
+          ups.RevivesUsed,
+          ups.CreatedAt,
+          ups.UpdatedAt,
+          pp.Name as PackageName,
+          pp.ScoreBonus,
+          pp.ReviveCount
+        FROM UserPremiumSubscriptions ups
+        INNER JOIN PremiumPackages pp ON ups.PackageId = pp.Id
+        WHERE ups.UserId = ?
+          AND ups.IsActive = 1
+          AND ups.EndDate > NOW()
+        ORDER BY ups.EndDate DESC
+      `, [userId]);
       
       if (result.recordset.length === 0) {
         return null;
@@ -113,15 +107,11 @@ class UserPremiumSubscriptionRepository {
    */
   async isSubscriptionExpired(subscriptionId) {
     try {
-      const pool = await getPool();
-      const result = await pool.request()
-        .input('subscriptionId', sql.UniqueIdentifier, subscriptionId)
-        .input('currentDate', sql.DateTime2, new Date())
-        .query(`
-          SELECT EndDate
-          FROM UserPremiumSubscriptions
-          WHERE Id = @subscriptionId
-        `);
+      const result = await executeQuery(`
+        SELECT EndDate
+        FROM UserPremiumSubscriptions
+        WHERE Id = ?
+      `, [subscriptionId]);
       
       if (result.recordset.length === 0) {
         return true; // Subscription not found, consider expired
@@ -143,19 +133,17 @@ class UserPremiumSubscriptionRepository {
    */
   async updateRevivesUsed(subscriptionId, revivesUsed) {
     try {
-      const pool = await getPool();
-      const result = await pool.request()
-        .input('subscriptionId', sql.UniqueIdentifier, subscriptionId)
-        .input('revivesUsed', sql.Int, revivesUsed)
-        .input('updatedAt', sql.DateTime2, new Date())
-        .query(`
-          UPDATE UserPremiumSubscriptions
-          SET 
-            RevivesUsed = @revivesUsed,
-            UpdatedAt = @updatedAt
-          OUTPUT INSERTED.*
-          WHERE Id = @subscriptionId
-        `);
+      await executeQuery(`
+        UPDATE UserPremiumSubscriptions
+        SET 
+          RevivesUsed = ?,
+          UpdatedAt = NOW()
+        WHERE Id = ?
+      `, [revivesUsed, subscriptionId]);
+      
+      const result = await executeQuery(`
+        SELECT * FROM UserPremiumSubscriptions WHERE Id = ?
+      `, [subscriptionId]);
       
       if (result.recordset.length === 0) {
         return null;
@@ -185,14 +173,11 @@ class UserPremiumSubscriptionRepository {
    */
   async deactivateExpiredSubscriptions() {
     try {
-      const pool = await getPool();
-      const result = await pool.request()
-        .input('currentDate', sql.DateTime2, new Date())
-        .query(`
-          UPDATE UserPremiumSubscriptions
-          SET IsActive = 0, UpdatedAt = GETUTCDATE()
-          WHERE IsActive = 1 AND EndDate <= @currentDate
-        `);
+      const result = await executeQuery(`
+        UPDATE UserPremiumSubscriptions
+        SET IsActive = 0, UpdatedAt = NOW()
+        WHERE IsActive = 1 AND EndDate <= NOW()
+      `);
       
       return result.rowsAffected[0];
     } catch (error) {
