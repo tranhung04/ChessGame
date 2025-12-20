@@ -1,29 +1,18 @@
-const sql = require('mssql');
+const mysql = require('mysql2/promise');
 
 // Database configuration
 const config = {
-  server: process.env.DB_SERVER || 'localhost',
-  database: process.env.DB_DATABASE || 'ToolChessDB',
-  user: process.env.DB_USER || 'sa',
+  host: process.env.DB_HOST || 'localhost',
+  port: parseInt(process.env.DB_PORT) || 3306,
+  user: process.env.DB_USER || 'root',
   password: process.env.DB_PASSWORD,
-  options: {
-    encrypt: process.env.DB_ENCRYPT === 'true',
-    trustServerCertificate: process.env.DB_TRUST_SERVER_CERTIFICATE === 'true',
-    enableArithAbort: true,
-    connectionTimeout: 30000,
-    requestTimeout: 30000
-  },
-  pool: {
-    max: 10,
-    min: 0,
-    idleTimeoutMillis: 30000
-  }
+  database: process.env.DB_DATABASE || 'ToolChessDB',
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0,
+  enableKeepAlive: true,
+  keepAliveInitialDelay: 0
 };
-
-// Add port only if specified and not empty
-if (process.env.DB_PORT && process.env.DB_PORT.trim() !== '') {
-  config.port = parseInt(process.env.DB_PORT);
-}
 
 // Connection pool
 let pool = null;
@@ -34,7 +23,7 @@ let pool = null;
  */
 async function getPool() {
   if (!pool) {
-    pool = await sql.connect(config);
+    pool = mysql.createPool(config);
     console.log('✓ Database connection pool created');
   }
   return pool;
@@ -46,9 +35,9 @@ async function getPool() {
 async function testDatabaseConnection() {
   try {
     const testPool = await getPool();
-    const result = await testPool.request().query('SELECT 1 AS test');
+    const [rows] = await testPool.query('SELECT 1 AS test');
     
-    if (result.recordset[0].test === 1) {
+    if (rows[0].test === 1) {
       console.log('✓ Database connection test successful');
       return true;
     }
@@ -65,7 +54,7 @@ async function testDatabaseConnection() {
  */
 async function closePool() {
   if (pool) {
-    await pool.close();
+    await pool.end();
     pool = null;
     console.log('✓ Database connection pool closed');
   }
@@ -74,18 +63,11 @@ async function closePool() {
 /**
  * Execute a query with parameters
  */
-async function executeQuery(query, params = {}) {
+async function executeQuery(query, params = []) {
   try {
     const dbPool = await getPool();
-    const request = dbPool.request();
-    
-    // Add parameters to request
-    Object.entries(params).forEach(([key, value]) => {
-      request.input(key, value);
-    });
-    
-    const result = await request.query(query);
-    return result;
+    const [rows] = await dbPool.query(query, params);
+    return { recordset: rows, rowsAffected: [rows.affectedRows || rows.length] };
   } catch (error) {
     console.error('Database query error:', error);
     throw error;
@@ -93,20 +75,15 @@ async function executeQuery(query, params = {}) {
 }
 
 /**
- * Execute a stored procedure
+ * Execute a stored procedure (MySQL uses CALL)
  */
-async function executeProcedure(procedureName, params = {}) {
+async function executeProcedure(procedureName, params = []) {
   try {
     const dbPool = await getPool();
-    const request = dbPool.request();
-    
-    // Add parameters to request
-    Object.entries(params).forEach(([key, value]) => {
-      request.input(key, value);
-    });
-    
-    const result = await request.execute(procedureName);
-    return result;
+    const placeholders = params.map(() => '?').join(', ');
+    const query = `CALL ${procedureName}(${placeholders})`;
+    const [rows] = await dbPool.query(query, params);
+    return { recordset: rows[0] || [], rowsAffected: [rows.affectedRows || 0] };
   } catch (error) {
     console.error('Database procedure error:', error);
     throw error;
@@ -114,7 +91,7 @@ async function executeProcedure(procedureName, params = {}) {
 }
 
 module.exports = {
-  sql,
+  mysql,
   getPool,
   testDatabaseConnection,
   closePool,
