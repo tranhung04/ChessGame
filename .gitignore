@@ -31,7 +31,10 @@ yarn-error.*
 *.pem
 
 # local env files
+.env
 .env*.local
+backend/.env
+database/.env
 
 # typescript
 *.tsbuildinfo
@@ -49,5 +52,23 @@ android/app/.cxx/
 *.apk
 *.aab
 
-# OAuth credentials (if you want to keep them private)
-# GOOGLE_OAUTH_CREDENTIALS.md
+# Documentation and helper files (not needed in production)
+*.md
+!README.md
+!backend/README.md
+!database/README.md
+*.bat
+*.sh
+*.ps1
+
+# IDE files
+.idea/
+.vscode/
+*.iml
+
+# Kiro specs
+.kiro/
+
+# OAuth credentials
+GOOGLE_CLIENT_ID.txt
+GOOGLE_OAUTH_CREDENTIALS.md
