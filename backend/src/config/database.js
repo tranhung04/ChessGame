@@ -1,18 +1,43 @@
 const mysql = require('mysql2/promise');
 
+// Parse MYSQL_URL if available, otherwise use individual env vars
+function getDatabaseConfig() {
+  const mysqlUrl = process.env.MYSQL_URL;
+  
+  if (mysqlUrl) {
+    // Parse mysql://user:password@host:port/database
+    const url = new URL(mysqlUrl);
+    return {
+      host: url.hostname,
+      port: parseInt(url.port) || 3306,
+      user: url.username,
+      password: url.password,
+      database: url.pathname.slice(1), // Remove leading /
+      waitForConnections: true,
+      connectionLimit: 10,
+      queueLimit: 0,
+      enableKeepAlive: true,
+      keepAliveInitialDelay: 0
+    };
+  }
+  
+  // Fallback to individual env vars
+  return {
+    host: process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.DB_PORT) || 3306,
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_DATABASE || 'ToolChessDB',
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0,
+    enableKeepAlive: true,
+    keepAliveInitialDelay: 0
+  };
+}
+
 // Database configuration
-const config = {
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT) || 3306,
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_DATABASE || 'ToolChessDB',
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0,
-  enableKeepAlive: true,
-  keepAliveInitialDelay: 0
-};
+const config = getDatabaseConfig();
 
 // Connection pool
 let pool = null;
