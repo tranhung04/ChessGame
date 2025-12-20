@@ -1,0 +1,35 @@
+{
+  "expo": {
+    "name": "Cờ Tướng ToolChess",
+    "slug": "toolchess-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#8B4513"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.toolchess.mobile"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#8B4513"
+      },
+      "package": "com.toolchess.mobile",
+      "versionCode": 1,
+      "permissions": ["INTERNET"]
+    },
+    "plugins": [
+      "expo-secure-store"
+    ],
+    "scheme": "toolchess"
+  }
+}
